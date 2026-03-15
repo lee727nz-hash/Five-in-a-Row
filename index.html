@@ -6,59 +6,38 @@
     <title>3D 입체 오목 게임</title>
     <style>
         body {
-            margin: 0;
-            padding: 0;
+            margin: 0; padding: 0;
             background-color: #2c3e50;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            overflow: hidden;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            touch-action: none; /* 모바일에서 브라우저 스크롤 방지 */
+            touch-action: none; /* 화면 쓸어넘기기 방지 */
         }
         #gameContainer {
             position: relative;
+            background-color: #dbb361;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            background-color: #dbb361; /* 캔버스 로딩 전 기본 배경색 */
+            border-radius: 5px;
         }
         canvas {
             display: block;
-            touch-action: none; /* 캔버스 내 터치 제스처 기본 동작 방지 */
+            border-radius: 5px;
+            touch-action: none; /* 캔버스 내 터치 제스처 방지 */
         }
         .overlay {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            color: white;
-            cursor: pointer;
-            z-index: 10;
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            color: white; cursor: pointer; z-index: 100;
+            text-align: center; border-radius: 5px;
         }
-        .title {
-            font-size: 3rem;
-            font-weight: bold;
-            margin-bottom: 20px;
-            text-shadow: 0 0 10px #f1c40f;
-            text-align: center;
-        }
-        .subtitle {
-            font-size: 1.2rem;
-            color: #bdc3c7;
-        }
+        .title { font-size: 3rem; font-weight: bold; margin-bottom: 20px; text-shadow: 0 0 10px #f1c40f; }
+        .subtitle { font-size: 1.2rem; color: #bdc3c7; }
         #uiInfo {
-            position: absolute;
-            top: -40px; left: 0; right: 0;
-            display: flex;
-            justify-content: space-between;
-            color: white;
-            font-size: 1.2rem;
-            font-weight: bold;
+            position: absolute; top: -40px; left: 0; right: 0;
+            display: flex; justify-content: space-between;
+            color: white; font-size: 1.2rem; font-weight: bold;
         }
-        .hidden { display: none !important; }
     </style>
 </head>
 <body>
@@ -72,115 +51,125 @@
     
     <div id="startScreen" class="overlay">
         <div class="title">Game Start</div>
-        <div class="subtitle">화면을 터치하거나 클릭하여 시작하세요</div>
+        <div class="subtitle">화면을 터치하거나 클릭하세요</div>
     </div>
     
-    <div id="gameOverScreen" class="overlay hidden">
+    <div id="gameOverScreen" class="overlay" style="display: none;">
         <div class="title" id="gameOverTitle">Game Over</div>
         <div class="subtitle">화면을 터치하여 다음 라운드 진행</div>
     </div>
 
-    <div id="victoryScreen" class="overlay hidden" style="background: rgba(0,0,0,0.8);">
+    <div id="victoryScreen" class="overlay" style="display: none; background: rgba(0,0,0,0.9);">
         <div class="title" style="text-shadow: 0 0 20px #e74c3c; font-size: 4rem;">🎉 VICTORY! 🎉</div>
-        <div class="subtitle">최종 레벨을 정복했습니다! (터치하여 처음부터)</div>
+        <div class="subtitle">최종 레벨 정복! (터치하여 처음부터)</div>
     </div>
 </div>
 
 <script>
-    // --- 게임 상태 및 변수 ---
+    // --- 게임 기본 세팅 ---
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    const size = 15; // 15x15 바둑판
+    const size = 15;
     let cellSize = 0;
     let margin = 0;
     
     let currentRound = 1;
     let currentLevel = 1;
-    let playerTurn = true; // true: 플레이어(흑), false: AI(백)
-    let gameState = 'START'; // START, PLAYING, GAMEOVER, VICTORY
-    
-    // 버그 수정: 가장 먼저 15x15 배열을 0으로 채워 초기화합니다.
-    let board = Array.from({ length: size }, () => Array(size).fill(0));
-    
-    // --- 오디오 시스템 ---
+    let playerTurn = true;
+    let gameState = 'START';
+    let board = [];
+
+    // 바둑판 초기화 (가장 먼저 실행되도록 안전하게 구성)
+    for (let i = 0; i < size; i++) {
+        board[i] = [];
+        for (let j = 0; j < size; j++) board[i][j] = 0;
+    }
+
+    // --- 오디오 시스템 (에러 방지 적용) ---
     let audioCtx = null;
     function initAudio() {
-        if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        // 브라우저 정책에 의해 정지된 오디오 컨텍스트를 깨웁니다.
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume();
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        } catch (e) {
+            console.log("Audio Init Blocked"); // 오디오가 막혀도 게임은 멈추지 않음
         }
     }
     
     function playSound(type) {
-        if (!audioCtx) return;
-        const osc = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        osc.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        
-        const now = audioCtx.currentTime;
-        if (type === 'stone') {
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(400, now);
-            osc.frequency.exponentialRampToValueAtTime(800, now + 0.1);
-            gainNode.gain.setValueAtTime(0.5, now);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-            osc.start(now); osc.stop(now + 0.1);
-        } else if (type === 'win') {
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(300, now);
-            osc.frequency.linearRampToValueAtTime(600, now + 0.5);
-            gainNode.gain.setValueAtTime(0.3, now);
-            gainNode.gain.linearRampToValueAtTime(0.01, now + 0.5);
-            osc.start(now); osc.stop(now + 0.5);
-        } else if (type === 'lose') {
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(300, now);
-            osc.frequency.linearRampToValueAtTime(100, now + 0.5);
-            gainNode.gain.setValueAtTime(0.3, now);
-            gainNode.gain.linearRampToValueAtTime(0.01, now + 0.5);
-            osc.start(now); osc.stop(now + 0.5);
-        }
+        try {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            const now = audioCtx.currentTime;
+            if (type === 'stone') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(800, now + 0.1);
+                gainNode.gain.setValueAtTime(0.5, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now); osc.stop(now + 0.1);
+            } else if (type === 'win') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(600, now + 0.5);
+                gainNode.gain.setValueAtTime(0.3, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.5);
+                osc.start(now); osc.stop(now + 0.5);
+            } else if (type === 'lose') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(100, now + 0.5);
+                gainNode.gain.setValueAtTime(0.3, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.5);
+                osc.start(now); osc.stop(now + 0.5);
+            }
+        } catch(e) {}
     }
 
-    // --- 리사이징 및 화면 그리기 ---
+    // --- 화면 리사이징 ---
     function resize() {
-        // 모바일과 데스크톱 화면에 맞게 캔버스 크기 조절
         const windowMin = Math.min(window.innerWidth * 0.95, window.innerHeight * 0.8);
         canvas.width = windowMin;
         canvas.height = windowMin;
+        
+        const container = document.getElementById('gameContainer');
+        container.style.width = windowMin + 'px';
+        container.style.height = windowMin + 'px';
+        
         margin = canvas.width / (size + 1);
         cellSize = (canvas.width - margin * 2) / (size - 1);
+        
         drawBoard();
     }
     window.addEventListener('resize', resize);
 
+    // --- 게임 시작/초기화 ---
     function resetBoardData() {
-        board = Array.from({ length: size }, () => Array(size).fill(0));
+        for (let i = 0; i < size; i++) {
+            for (let j = 0; j < size; j++) {
+                board[i][j] = 0;
+            }
+        }
         playerTurn = true;
-        updateUI();
-        drawBoard();
-    }
-
-    function updateUI() {
         currentLevel = Math.ceil(currentRound / 3);
         if (currentLevel > 10) currentLevel = 10;
         document.getElementById('roundText').innerText = `Round: ${currentRound} / 30`;
         document.getElementById('levelText').innerText = `Level: ${currentLevel}`;
+        drawBoard();
     }
 
+    // --- 그리기 로직 ---
     function drawBoard() {
-        // 배경 나무 질감 느낌
         ctx.fillStyle = '#dbb361';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         ctx.strokeStyle = '#333';
         ctx.lineWidth = 1.5;
         
-        // 격자 그리기
         for (let i = 0; i < size; i++) {
             ctx.beginPath();
             ctx.moveTo(margin, margin + i * cellSize);
@@ -193,7 +182,6 @@
             ctx.stroke();
         }
         
-        // 점(화점) 그리기
         const dots = [3, 7, 11];
         ctx.fillStyle = '#333';
         for (let i of dots) {
@@ -204,12 +192,9 @@
             }
         }
 
-        // 바둑알 그리기
         for (let i = 0; i < size; i++) {
             for (let j = 0; j < size; j++) {
-                if (board[i][j] !== 0) {
-                    drawStone(i, j, board[i][j]);
-                }
+                if (board[i][j] !== 0) drawStone(i, j, board[i][j]);
             }
         }
     }
@@ -222,16 +207,13 @@
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
 
-        // 3D 입체 그라디언트
         const gradient = ctx.createRadialGradient(
-            cx - radius * 0.3, cy - radius * 0.3, radius * 0.1, 
-            cx, cy, radius
+            cx - radius * 0.3, cy - radius * 0.3, radius * 0.1, cx, cy, radius
         );
-
-        if (type === 1) { // 흑돌 (플레이어)
+        if (type === 1) { // 흑돌
             gradient.addColorStop(0, '#666');
             gradient.addColorStop(1, '#000');
-        } else { // 백돌 (AI)
+        } else { // 백돌
             gradient.addColorStop(0, '#fff');
             gradient.addColorStop(1, '#ccc');
         }
@@ -245,41 +227,23 @@
         ctx.shadowColor = 'transparent';
     }
 
-    // --- 사용자 입력 처리 ---
-    function handleInput(e) {
+    // --- 입력 처리 (Pointer Event로 통일) ---
+    canvas.addEventListener('pointerdown', function(e) {
         if (gameState !== 'PLAYING' || !playerTurn) return;
         
-        // 터치 스크롤 등 기본 동작 방지
-        if(e.cancelable) e.preventDefault();
-        
-        let clientX, clientY;
-        if (e.type === 'touchstart' || e.type === 'touchend') {
-            clientX = e.changedTouches[0].clientX;
-            clientY = e.changedTouches[0].clientY;
-        } else {
-            clientX = e.clientX;
-            clientY = e.clientY;
-        }
-
         const rect = canvas.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
 
-        // 클릭된 좌표를 그리드 인덱스로 변환
         const gridX = Math.round((x - margin) / cellSize);
         const gridY = Math.round((y - margin) / cellSize);
 
-        // 유효한 위치인지 검사
         if (gridX >= 0 && gridX < size && gridY >= 0 && gridY < size && board[gridX][gridY] === 0) {
             placeStone(gridX, gridY, 1);
         }
-    }
+    });
 
-    // 터치와 마우스 이벤트 모두 등록
-    canvas.addEventListener('mousedown', handleInput);
-    canvas.addEventListener('touchstart', handleInput, {passive: false});
-
-    // --- 게임 로직 ---
+    // --- 게임 진행 로직 ---
     function placeStone(x, y, player) {
         board[x][y] = player;
         playSound('stone');
@@ -290,12 +254,9 @@
             return;
         }
         
-        // 턴 넘기기
         playerTurn = !playerTurn;
-        
-        // AI 턴일 경우
         if (!playerTurn && gameState === 'PLAYING') {
-            setTimeout(aiMove, 300); // 0.3초 후 AI가 돌을 둠
+            setTimeout(aiMove, 300);
         }
     }
 
@@ -303,13 +264,11 @@
         const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
         for (let [dx, dy] of directions) {
             let count = 1;
-            // 정방향 검사
             for (let i = 1; i <= 4; i++) {
                 let nx = x + dx * i, ny = y + dy * i;
                 if (nx < 0 || nx >= size || ny < 0 || ny >= size || board[nx][ny] !== player) break;
                 count++;
             }
-            // 역방향 검사
             for (let i = 1; i <= 4; i++) {
                 let nx = x - dx * i, ny = y - dy * i;
                 if (nx < 0 || nx >= size || ny < 0 || ny >= size || board[nx][ny] !== player) break;
@@ -327,7 +286,7 @@
             playSound('win');
             if (currentRound >= 30) {
                 gameState = 'VICTORY';
-                document.getElementById('victoryScreen').classList.remove('hidden');
+                document.getElementById('victoryScreen').style.display = 'flex';
                 startFireworks();
                 return;
             }
@@ -338,28 +297,22 @@
             playSound('lose');
             title.innerText = "Game Over (AI Win)";
             title.style.color = "#e74c3c";
-            // 패배 시 라운드는 유지됩니다
         }
-        document.getElementById('gameOverScreen').classList.remove('hidden');
+        document.getElementById('gameOverScreen').style.display = 'flex';
     }
 
-    // --- AI 로직 ---
+    // --- AI 알고리즘 ---
     function aiMove() {
         if (gameState !== 'PLAYING') return;
         
         let bestScore = -Infinity;
         let bestMoves = [];
-
-        // 레벨이 낮을수록 AI의 실수를 유발하는 노이즈 값
         const noiseMax = Math.max(0, 100 - (currentLevel * 10)); 
 
         for (let i = 0; i < size; i++) {
             for (let j = 0; j < size; j++) {
                 if (board[i][j] === 0) {
-                    // 공격과 방어 점수 합산
                     let score = evaluatePosition(i, j, 2) + evaluatePosition(i, j, 1) * 1.2; 
-                    
-                    // 무작위 오차 추가
                     score += Math.random() * noiseMax;
 
                     if (score > bestScore) {
@@ -383,8 +336,7 @@
         const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
         
         for (let [dx, dy] of directions) {
-            let count = 1;
-            let openEnds = 0;
+            let count = 1; let openEnds = 0;
             
             for (let i = 1; i <= 4; i++) {
                 let nx = x + dx * i, ny = y + dy * i;
@@ -411,23 +363,19 @@
         return totalScore;
     }
 
-    // --- 파티클 시스템 (불꽃놀이) ---
+    // --- 불꽃놀이 파티클 ---
     let particles = [];
     let animationId;
     function startFireworks() {
-        for (let i = 0; i < 150; i++) {
-            createParticle(canvas.width / 2, canvas.height / 2);
-        }
+        for (let i = 0; i < 150; i++) createParticle(canvas.width / 2, canvas.height / 2);
         animateFireworks();
     }
 
     function createParticle(x, y) {
         particles.push({
             x: x, y: y,
-            vx: (Math.random() - 0.5) * 10,
-            vy: (Math.random() - 0.5) * 10,
-            life: 1,
-            color: `hsl(${Math.random() * 360}, 100%, 50%)`
+            vx: (Math.random() - 0.5) * 10, vy: (Math.random() - 0.5) * 10,
+            life: 1, color: `hsl(${Math.random() * 360}, 100%, 50%)`
         });
     }
 
@@ -443,15 +391,8 @@
             ctx.fillStyle = p.color;
             ctx.fill();
 
-            p.x += p.vx;
-            p.y += p.vy;
-            p.vy += 0.05; // 중력
-            p.life -= 0.01;
-
-            if (p.life <= 0) {
-                particles.splice(i, 1);
-                i--;
-            }
+            p.x += p.vx; p.y += p.vy; p.vy += 0.05; p.life -= 0.01;
+            if (p.life <= 0) { particles.splice(i, 1); i--; }
         }
         
         if (Math.random() < 0.1) {
@@ -460,37 +401,32 @@
             for(let i=0; i<30; i++) createParticle(basex, basey);
             playSound('stone'); 
         }
-
         animationId = requestAnimationFrame(animateFireworks);
     }
 
-    // --- UI 이벤트 리스너 ---
-    document.getElementById('startScreen').addEventListener('click', function(e) {
-        e.stopPropagation(); // 캔버스로 클릭 이벤트가 넘어가는 것 방지
-        initAudio();
-        this.classList.add('hidden');
-        gameState = 'PLAYING';
-        resetBoardData();
+    // --- UI 클릭 및 터치 (가림막 확실히 숨기기) ---
+    function hideAllScreens() {
+        document.getElementById('startScreen').style.display = 'none';
+        document.getElementById('gameOverScreen').style.display = 'none';
+        document.getElementById('victoryScreen').style.display = 'none';
+    }
+
+    document.getElementById('startScreen').addEventListener('pointerdown', function() {
+        initAudio(); hideAllScreens();
+        gameState = 'PLAYING'; resetBoardData();
     });
 
-    document.getElementById('gameOverScreen').addEventListener('click', function(e) {
-        e.stopPropagation();
-        this.classList.add('hidden');
-        gameState = 'PLAYING';
-        resetBoardData();
+    document.getElementById('gameOverScreen').addEventListener('pointerdown', function() {
+        hideAllScreens();
+        gameState = 'PLAYING'; resetBoardData();
     });
 
-    document.getElementById('victoryScreen').addEventListener('click', function(e) {
-        e.stopPropagation();
-        cancelAnimationFrame(animationId);
-        particles = [];
-        this.classList.add('hidden');
-        currentRound = 1;
-        gameState = 'PLAYING';
-        resetBoardData();
+    document.getElementById('victoryScreen').addEventListener('pointerdown', function() {
+        cancelAnimationFrame(animationId); particles = []; hideAllScreens();
+        currentRound = 1; gameState = 'PLAYING'; resetBoardData();
     });
 
-    // 스크립트 로드 시 최초 1회 화면 맞춤
+    // 초기 화면 그리기
     resize();
 </script>
 
