@@ -3,307 +3,313 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D 오목 게임</title>
+    <title>3D 입체 오목 게임</title>
     <style>
         body {
             margin: 0;
             padding: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
             background-color: #2c3e50;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
             overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             touch-action: none; /* 모바일에서 화면 스크롤 방지 */
         }
-        #game-container {
+        #gameContainer {
             position: relative;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            border-radius: 10px;
         }
         canvas {
             display: block;
-            border-radius: 10px;
         }
-        #ui-layer {
+        .overlay {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
             display: flex;
             flex-direction: column;
-            align-items: center;
             justify-content: center;
-            background: rgba(0, 0, 0, 0.7);
+            align-items: center;
             color: white;
-            border-radius: 10px;
-            text-align: center;
+            cursor: pointer;
             z-index: 10;
         }
-        h1 { margin: 0; font-size: 3rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
-        p { font-size: 1.2rem; margin-top: 10px; }
-        .hidden { display: none !important; }
-        #info-panel {
-            color: white;
+        .title {
+            font-size: 3rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #f1c40f;
+            text-align: center;
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            color: #bdc3c7;
+        }
+        #uiInfo {
+            position: absolute;
+            top: -40px; left: 0; right: 0;
             display: flex;
             justify-content: space-between;
-            width: 100%;
-            max-width: 600px;
-            margin-bottom: 10px;
+            color: white;
             font-size: 1.2rem;
             font-weight: bold;
         }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-    <div id="info-panel">
-        <span id="level-display">레벨: 1</span>
-        <span id="wins-display">승리: 0 / 30</span>
+<div id="gameContainer">
+    <div id="uiInfo">
+        <span id="roundText">Round: 1 / 30</span>
+        <span id="levelText">Level: 1</span>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="startScreen" class="overlay">
+        <div class="title">Game Start</div>
+        <div class="subtitle">화면을 터치하거나 클릭하여 시작하세요</div>
+    </div>
+    
+    <div id="gameOverScreen" class="overlay hidden">
+        <div class="title" id="gameOverTitle">Game Over</div>
+        <div class="subtitle">화면을 터치하여 다음 라운드 진행</div>
     </div>
 
-    <div id="game-container">
-        <canvas id="boardCanvas" width="600" height="600"></canvas>
-        <div id="ui-layer">
-            <h1 id="ui-title">Game Start</h1>
-            <p id="ui-subtitle">스페이스바를 누르세요<br><span style="font-size:0.8rem">(모바일은 화면을 터치하세요)</span></p>
-        </div>
+    <div id="victoryScreen" class="overlay hidden" style="background: rgba(0,0,0,0.2);">
+        <div class="title" style="text-shadow: 0 0 20px #e74c3c; font-size: 4rem;">🎉 VICTORY! 🎉</div>
+        <div class="subtitle">최종 레벨을 정복했습니다! (터치하여 처음부터)</div>
     </div>
+</div>
 
 <script>
     // --- 게임 상태 및 변수 ---
-    const canvas = document.getElementById('boardCanvas');
+    const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    const uiLayer = document.getElementById('ui-layer');
-    const uiTitle = document.getElementById('ui-title');
-    const uiSubtitle = document.getElementById('ui-subtitle');
-    const levelDisplay = document.getElementById('level-display');
-    const winsDisplay = document.getElementById('wins-display');
-
-    const BOARD_SIZE = 15;
-    const CELL_SIZE = canvas.width / BOARD_SIZE;
-    const STONE_RADIUS = CELL_SIZE * 0.4;
-    
+    const size = 15; // 15x15 바둑판
     let board = [];
-    let state = 'START'; // START, PLAYING, GAMEOVER, VICTORY
-    let playerTurn = true; // true = 흑(플레이어), false = 백(AI)
-    let wins = 0;
-    let level = 1;
-
-    // 불꽃놀이 파티클 저장 배열
-    let particles = [];
-
-    // 오디오 컨텍스트 설정 (사용자 상호작용 후 활성화)
-    let audioCtx;
-
-    // --- 초기화 함수 ---
-    function initBoard() {
-        board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0)); // 0: 빈칸, 1: 흑, 2: 백
+    let cellSize = 0;
+    let margin = 0;
+    
+    let currentRound = 1;
+    let currentLevel = 1;
+    let playerTurn = true; // true: 플레이어(흑), false: AI(백)
+    let gameState = 'START'; // START, PLAYING, GAMEOVER, VICTORY
+    
+    // --- 오디오 시스템 (Web Audio API) ---
+    let audioCtx = null;
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+    function playSound(type) {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        if (type === 'stone') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+            gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+        } else if (type === 'win') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(600, audioCtx.currentTime + 0.5);
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+        } else if (type === 'lose') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(100, audioCtx.currentTime + 0.5);
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+        }
     }
 
-    function drawBoard() {
-        // 나무 바둑판 배경 (그라데이션으로 입체감)
-        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-        gradient.addColorStop(0, '#e6b36a');
-        gradient.addColorStop(1, '#c88e40');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // --- 리사이징 및 초기화 ---
+    function resize() {
+        // 모바일과 데스크톱 화면에 맞게 캔버스 크기 조절
+        const windowMin = Math.min(window.innerWidth * 0.95, window.innerHeight * 0.8);
+        canvas.width = windowMin;
+        canvas.height = windowMin;
+        margin = canvas.width / (size + 1);
+        cellSize = (canvas.width - margin * 2) / (size - 1);
+        drawBoard();
+    }
+    window.addEventListener('resize', resize);
 
-        // 바둑판 선
-        ctx.strokeStyle = '#5a3d16';
-        ctx.lineWidth = 1;
-        for (let i = 0; i < BOARD_SIZE; i++) {
+    function initBoard() {
+        board = [];
+        for (let i = 0; i < size; i++) {
+            board[i] = [];
+            for (let j = 0; j < size; j++) board[i][j] = 0;
+        }
+        playerTurn = true;
+        updateUI();
+        drawBoard();
+    }
+
+    function updateUI() {
+        currentLevel = Math.ceil(currentRound / 3);
+        if(currentLevel > 10) currentLevel = 10;
+        document.getElementById('roundText').innerText = `Round: ${currentRound} / 30`;
+        document.getElementById('levelText').innerText = `Level: ${currentLevel}`;
+    }
+
+    // --- 그래픽 (바둑판 및 입체 바둑알) ---
+    function drawBoard() {
+        // 배경 나무 질감 느낌
+        ctx.fillStyle = '#dbb361';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1.5;
+        
+        // 격자 그리기
+        for (let i = 0; i < size; i++) {
             // 가로선
             ctx.beginPath();
-            ctx.moveTo(CELL_SIZE / 2, CELL_SIZE / 2 + i * CELL_SIZE);
-            ctx.lineTo(canvas.width - CELL_SIZE / 2, CELL_SIZE / 2 + i * CELL_SIZE);
+            ctx.moveTo(margin, margin + i * cellSize);
+            ctx.lineTo(canvas.width - margin, margin + i * cellSize);
             ctx.stroke();
             // 세로선
             ctx.beginPath();
-            ctx.moveTo(CELL_SIZE / 2 + i * CELL_SIZE, CELL_SIZE / 2);
-            ctx.lineTo(CELL_SIZE / 2 + i * CELL_SIZE, canvas.height - CELL_SIZE / 2);
+            ctx.moveTo(margin + i * cellSize, margin);
+            ctx.lineTo(margin + i * cellSize, canvas.height - margin);
             ctx.stroke();
         }
-
-        // 화점 그리기
-        const starPoints = [3, 7, 11];
-        ctx.fillStyle = '#5a3d16';
-        for(let i of starPoints) {
-            for(let j of starPoints) {
+        
+        // 점(화점) 그리기
+        const dots = [3, 7, 11];
+        ctx.fillStyle = '#333';
+        for (let i of dots) {
+            for (let j of dots) {
                 ctx.beginPath();
-                ctx.arc(CELL_SIZE / 2 + i * CELL_SIZE, CELL_SIZE / 2 + j * CELL_SIZE, 4, 0, Math.PI * 2);
+                ctx.arc(margin + i * cellSize, margin + j * cellSize, 4, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
 
-        // 돌 그리기
-        for (let y = 0; y < BOARD_SIZE; y++) {
-            for (let x = 0; x < BOARD_SIZE; x++) {
-                if (board[y][x] !== 0) {
-                    drawStone(x, y, board[y][x]);
+        // 바둑알 그리기
+        for (let i = 0; i < size; i++) {
+            for (let j = 0; j < size; j++) {
+                if (board[i][j] !== 0) {
+                    drawStone(i, j, board[i][j]);
                 }
             }
         }
     }
 
-    // 입체적인 바둑알 그리기
-    function drawStone(x, y, player) {
-        const cx = CELL_SIZE / 2 + x * CELL_SIZE;
-        const cy = CELL_SIZE / 2 + y * CELL_SIZE;
-        
+    function drawStone(x, y, type) {
+        const cx = margin + x * cellSize;
+        const cy = margin + y * cellSize;
+        const radius = cellSize * 0.45;
+
         ctx.beginPath();
-        ctx.arc(cx, cy, STONE_RADIUS, 0, Math.PI * 2);
-        
-        // 방사형 그라데이션으로 3D 구형 느낌 연출 (빛 반사 위치를 좌상단으로)
-        const gradient = ctx.createRadialGradient(cx - STONE_RADIUS * 0.3, cy - STONE_RADIUS * 0.3, STONE_RADIUS * 0.1, cx, cy, STONE_RADIUS);
-        
-        if (player === 1) { // 흑돌
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+
+        // 3D 입체 그라디언트
+        const gradient = ctx.createRadialGradient(
+            cx - radius * 0.3, cy - radius * 0.3, radius * 0.1, 
+            cx, cy, radius
+        );
+
+        if (type === 1) { // 흑돌 (플레이어)
             gradient.addColorStop(0, '#666');
             gradient.addColorStop(1, '#000');
-        } else { // 백돌
+        } else { // 백돌 (AI)
             gradient.addColorStop(0, '#fff');
             gradient.addColorStop(1, '#ccc');
         }
         
         ctx.fillStyle = gradient;
-        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        // 그림자 효과
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
         ctx.shadowBlur = 5;
-        ctx.shadowOffsetX = 3;
-        ctx.shadowOffsetY = 3;
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        
         ctx.fill();
         
-        // 그림자 초기화 (다음 그림에 영향 안 주게)
+        // 그림자 초기화
         ctx.shadowColor = 'transparent';
     }
 
-    // --- 게임 로직 ---
-    function startGame() {
-        initAudio();
-        initBoard();
-        state = 'PLAYING';
-        playerTurn = true;
-        uiLayer.classList.add('hidden');
-        drawBoard();
-    }
-
-    function placeStone(x, y) {
-        if (state !== 'PLAYING' || !playerTurn || board[y][x] !== 0) return;
+    // --- 상호작용 (터치 및 클릭) ---
+    function handleInput(e) {
+        if (gameState !== 'PLAYING' || !playerTurn) return;
         
-        board[y][x] = 1; // 플레이어는 흑(1)
-        playSound(400, 'sine', 0.1); // 놓는 소리
-        drawBoard();
+        e.preventDefault();
+        initAudio(); // 첫 터치 시 오디오 컨텍스트 활성화
         
-        if (checkWin(x, y, 1)) {
-            handleWin();
+        let clientX, clientY;
+        if (e.type === 'touchstart') {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
         } else {
-            playerTurn = false;
-            setTimeout(aiMove, 300); // AI가 잠시 생각하는 척
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        // 클릭된 좌표를 그리드 인덱스로 변환
+        const gridX = Math.round((x - margin) / cellSize);
+        const gridY = Math.round((y - margin) / cellSize);
+
+        if (gridX >= 0 && gridX < size && gridY >= 0 && gridY < size && board[gridX][gridY] === 0) {
+            placeStone(gridX, gridY, 1);
         }
     }
 
-    // 간단한 AI 로직 (레벨에 따라 랜덤성 감소)
-    function aiMove() {
-        if (state !== 'PLAYING') return;
+    canvas.addEventListener('mousedown', handleInput);
+    canvas.addEventListener('touchstart', handleInput, {passive: false});
 
-        let bestScore = -Infinity;
-        let moves = [];
+    // --- 게임 로직 ---
+    function placeStone(x, y, player) {
+        board[x][y] = player;
+        playSound('stone');
+        drawBoard();
         
-        // 레벨이 높을수록 노이즈(실수)가 줄어듭니다.
-        const noiseLevel = Math.max(0, 10 - level) * 50; 
-
-        for (let y = 0; y < BOARD_SIZE; y++) {
-            for (let x = 0; x < BOARD_SIZE; x++) {
-                if (board[y][x] === 0) {
-                    let score = evaluatePosition(x, y);
-                    // 난이도 조절: 랜덤 점수를 더해 완벽함을 떨어뜨림
-                    score += Math.random() * noiseLevel; 
-
-                    if (score > bestScore) {
-                        bestScore = score;
-                        moves = [{x, y}];
-                    } else if (score === bestScore) {
-                        moves.push({x, y});
-                    }
-                }
-            }
+        if (checkWin(x, y, player)) {
+            endGame(player === 1 ? 'WIN' : 'LOSE');
+            return;
         }
-
-        // 최적의 수 중 랜덤 선택
-        const move = moves[Math.floor(Math.random() * moves.length)];
         
-        if(move) {
-            board[move.y][move.x] = 2; // AI는 백(2)
-            playSound(500, 'sine', 0.1); // 놓는 소리
-            drawBoard();
-            
-            if (checkWin(move.x, move.y, 2)) {
-                handleLose();
-            } else {
-                playerTurn = true;
-            }
+        playerTurn = !playerTurn;
+        if (!playerTurn) {
+            setTimeout(aiMove, 300); // AI가 잠시 생각하는 듯한 지연 효과
         }
-    }
-
-    // 위치 평가 함수 (공격과 방어 점수 합산)
-    function evaluatePosition(x, y) {
-        let score = 0;
-        // AI 자신의 연결 체크 (공격)
-        score += evaluateDirection(x, y, 2) * 1.1; 
-        // 플레이어의 연결 방어 체크 (방어)
-        score += evaluateDirection(x, y, 1);
-        return score;
-    }
-
-    function evaluateDirection(x, y, player) {
-        let score = 0;
-        const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
-        
-        directions.forEach(([dx, dy]) => {
-            let count = 1;
-            let openEnds = 0;
-
-            // 한 방향
-            let nx = x + dx, ny = y + dy;
-            while (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && board[ny][nx] === player) {
-                count++;
-                nx += dx; ny += dy;
-            }
-            if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && board[ny][nx] === 0) openEnds++;
-
-            // 반대 방향
-            nx = x - dx; ny = y - dy;
-            while (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && board[ny][nx] === player) {
-                count++;
-                nx -= dx; ny -= dy;
-            }
-            if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && board[ny][nx] === 0) openEnds++;
-
-            // 점수 부여
-            if (count >= 5) score += 100000;
-            else if (count === 4 && openEnds === 2) score += 10000;
-            else if (count === 4 && openEnds === 1) score += 1000;
-            else if (count === 3 && openEnds === 2) score += 500;
-            else if (count === 3 && openEnds === 1) score += 50;
-            else if (count === 2 && openEnds === 2) score += 10;
-        });
-        return score;
     }
 
     function checkWin(x, y, player) {
-        const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
+        const directions = [
+            [1, 0], [0, 1], [1, 1], [1, -1]
+        ];
         for (let [dx, dy] of directions) {
             let count = 1;
+            // 한쪽 방향
             for (let i = 1; i <= 4; i++) {
                 let nx = x + dx * i, ny = y + dy * i;
-                if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE || board[ny][nx] !== player) break;
+                if (nx < 0 || nx >= size || ny < 0 || ny >= size || board[nx][ny] !== player) break;
                 count++;
             }
+            // 반대 방향
             for (let i = 1; i <= 4; i++) {
                 let nx = x - dx * i, ny = y - dy * i;
-                if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE || board[ny][nx] !== player) break;
+                if (nx < 0 || nx >= size || ny < 0 || ny >= size || board[nx][ny] !== player) break;
                 count++;
             }
             if (count >= 5) return true;
@@ -311,160 +317,184 @@
         return false;
     }
 
-    function handleWin() {
-        wins++;
-        if (wins % 3 === 0) level++; // 3판마다 레벨업
-        
-        updateUI();
-
-        if (wins >= 30) {
-            state = 'VICTORY';
-            playWinSound();
-            showUI("🎉 축하합니다! 🎉", "최종 레벨을 클리어했습니다!<br>스페이스바를 눌러 다시 시작");
-            startFireworks();
+    function endGame(result) {
+        gameState = 'GAMEOVER';
+        const title = document.getElementById('gameOverTitle');
+        if (result === 'WIN') {
+            playSound('win');
+            if (currentRound === 30) {
+                gameState = 'VICTORY';
+                document.getElementById('victoryScreen').classList.remove('hidden');
+                startFireworks();
+                return;
+            }
+            title.innerText = "You Win!";
+            title.style.color = "#2ecc71";
+            currentRound++; // 이겼을 때만 다음 라운드
         } else {
-            state = 'GAMEOVER';
-            playWinSound();
-            showUI("You Win!", "스페이스바를 눌러 다음 판 시작");
+            playSound('lose');
+            title.innerText = "Game Over (AI Win)";
+            title.style.color = "#e74c3c";
+            // 졌을 때는 라운드 유지 (다시 도전)
         }
+        document.getElementById('gameOverScreen').classList.remove('hidden');
     }
 
-    function handleLose() {
-        state = 'GAMEOVER';
-        playLoseSound();
-        showUI("Game Over", "AI가 승리했습니다.<br>스페이스바를 누르세요");
-    }
+    // --- AI 로직 ---
+    function aiMove() {
+        let bestScore = -Infinity;
+        let bestMoves = [];
 
-    function updateUI() {
-        levelDisplay.innerText = `레벨: ${level}`;
-        winsDisplay.innerText = `승리: ${wins} / 30`;
-    }
+        // 레벨에 따른 노이즈 (실수 확률). 레벨이 높을수록 노이즈가 적어짐.
+        const noiseMax = Math.max(0, 100 - (currentLevel * 10)); 
 
-    function showUI(title, subtitle) {
-        uiTitle.innerHTML = title;
-        uiSubtitle.innerHTML = subtitle;
-        uiLayer.classList.remove('hidden');
-    }
+        for (let i = 0; i < size; i++) {
+            for (let j = 0; j < size; j++) {
+                if (board[i][j] === 0) {
+                    // 공격 점수(2)와 방어 점수(1)를 합산
+                    let score = evaluatePosition(i, j, 2) + evaluatePosition(i, j, 1) * 1.2; 
+                    
+                    // 레벨이 낮을수록 랜덤 점수를 추가하여 완벽하지 않게 만듦
+                    score += Math.random() * noiseMax;
 
-    // --- 입력 처리 ---
-    canvas.addEventListener('mousedown', (e) => handleInput(e.offsetX, e.offsetY));
-    canvas.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        const rect = canvas.getBoundingClientRect();
-        const touch = e.touches[0];
-        handleInput(touch.clientX - rect.left, touch.clientY - rect.top);
-    }, { passive: false });
-
-    function handleInput(pixelX, pixelY) {
-        if (state === 'PLAYING') {
-            const x = Math.floor(pixelX / CELL_SIZE);
-            const y = Math.floor(pixelY / CELL_SIZE);
-            placeStone(x, y);
-        } else if (state === 'START' || state === 'GAMEOVER' || state === 'VICTORY') {
-            if (state === 'VICTORY') { wins = 0; level = 1; updateUI(); }
-            startGame();
-        }
-    }
-
-    window.addEventListener('keydown', (e) => {
-        if (e.code === 'Space') {
-            e.preventDefault(); // 스크롤 방지
-            if (state === 'START' || state === 'GAMEOVER' || state === 'VICTORY') {
-                if (state === 'VICTORY') { wins = 0; level = 1; updateUI(); }
-                startGame();
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMoves = [[i, j]];
+                    } else if (score === bestScore) {
+                        bestMoves.push([i, j]);
+                    }
+                }
             }
         }
-    });
-
-    // --- 웹 오디오 API (효과음) ---
-    function initAudio() {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-
-    function playSound(freq, type, duration) {
-        if (!audioCtx) return;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        // 짧게 끊어지는 소리 효과
-        gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + duration);
-    }
-
-    function playWinSound() {
-        if(!audioCtx) return;
-        let time = audioCtx.currentTime;
-        [440, 554, 659, 880].forEach((freq, i) => {
-            setTimeout(() => playSound(freq, 'triangle', 0.2), i * 150);
-        });
-    }
-
-    function playLoseSound() {
-        if(!audioCtx) return;
-        playSound(200, 'sawtooth', 0.5);
-        setTimeout(() => playSound(150, 'sawtooth', 0.6), 300);
-    }
-
-    // --- 불꽃놀이 효과 (캔버스) ---
-    function startFireworks() {
-        particles = [];
-        for(let i=0; i<100; i++) {
-            particles.push(createParticle());
+        
+        // 동일한 최고 점수 중 랜덤 선택
+        if (bestMoves.length > 0) {
+            const move = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+            placeStone(move[0], move[1], 2);
         }
-        requestAnimationFrame(animateFireworks);
     }
 
-    function createParticle() {
-        return {
-            x: canvas.width / 2,
-            y: canvas.height / 2,
-            vx: (Math.random() - 0.5) * 15,
-            vy: (Math.random() - 0.5) * 15,
-            color: `hsl(${Math.random() * 360}, 100%, 50%)`,
-            life: 1.0
-        };
+    // 해당 위치에 돌을 놓았을 때의 가치 평가
+    function evaluatePosition(x, y, player) {
+        let totalScore = 0;
+        const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
+        
+        for (let [dx, dy] of directions) {
+            let count = 1;
+            let openEnds = 0;
+            
+            // 한쪽
+            for (let i = 1; i <= 4; i++) {
+                let nx = x + dx * i, ny = y + dy * i;
+                if (nx < 0 || nx >= size || ny < 0 || ny >= size) break;
+                if (board[nx][ny] === player) count++;
+                else if (board[nx][ny] === 0) { openEnds++; break; }
+                else break;
+            }
+            // 반대쪽
+            for (let i = 1; i <= 4; i++) {
+                let nx = x - dx * i, ny = y - dy * i;
+                if (nx < 0 || nx >= size || ny < 0 || ny >= size) break;
+                if (board[nx][ny] === player) count++;
+                else if (board[nx][ny] === 0) { openEnds++; break; }
+                else break;
+            }
+
+            // 점수 부여 (연속된 돌의 수와 열린 공간에 따라)
+            if (count >= 5) totalScore += 100000;
+            else if (count === 4 && openEnds === 2) totalScore += 10000;
+            else if (count === 4 && openEnds === 1) totalScore += 1000;
+            else if (count === 3 && openEnds === 2) totalScore += 500;
+            else if (count === 3 && openEnds === 1) totalScore += 100;
+            else if (count === 2 && openEnds === 2) totalScore += 50;
+        }
+        return totalScore;
+    }
+
+    // --- 파티클 시스템 (불꽃놀이) ---
+    let particles = [];
+    let animationId;
+    function startFireworks() {
+        for (let i = 0; i < 150; i++) {
+            particles.push({
+                x: canvas.width / 2,
+                y: canvas.height / 2,
+                vx: (Math.random() - 0.5) * 10,
+                vy: (Math.random() - 0.5) * 10,
+                life: 1,
+                color: `hsl(${Math.random() * 360}, 100%, 50%)`
+            });
+        }
+        animateFireworks();
     }
 
     function animateFireworks() {
-        if (state !== 'VICTORY') return; // 승리 상태가 아니면 애니메이션 중지
-
-        drawBoard(); // 바탕 다시 그리기 (잔상 없애기)
-        
-        // 어두운 오버레이
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        if (gameState !== 'VICTORY') return;
+        ctx.fillStyle = 'rgba(44, 62, 80, 0.2)'; // 잔상 효과
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         for (let i = 0; i < particles.length; i++) {
             let p = particles[i];
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
             ctx.fillStyle = p.color;
-            ctx.globalAlpha = p.life;
             ctx.fill();
-            
+
             p.x += p.vx;
             p.y += p.vy;
-            p.vy += 0.2; // 중력
-            p.life -= 0.02; // 수명 감소
-        }
-        ctx.globalAlpha = 1.0;
-        particles = particles.filter(p => p.life > 0);
+            p.vy += 0.05; // 중력
+            p.life -= 0.01;
 
-        if (particles.length < 50 && Math.random() < 0.1) {
-             for(let i=0; i<20; i++) particles.push(createParticle());
+            if (p.life <= 0) {
+                particles.splice(i, 1);
+                i--;
+            }
+        }
+        
+        // 계속 새로운 불꽃 추가
+        if(Math.random() < 0.1) {
+            let basex = Math.random() * canvas.width;
+            let basey = Math.random() * canvas.height * 0.5;
+            for(let i=0; i<30; i++) {
+                 particles.push({
+                    x: basex, y: basey,
+                    vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 5,
+                    life: 1, color: `hsl(${Math.random() * 360}, 100%, 50%)`
+                });
+            }
+            playSound('stone'); // 불꽃놀이 팝 소리 대용
         }
 
-        requestAnimationFrame(animateFireworks);
+        animationId = requestAnimationFrame(animateFireworks);
     }
 
-    // 초기 바둑판 렌더링
-    drawBoard();
+    // --- UI 이벤트 리스너 ---
+    document.getElementById('startScreen').addEventListener('click', function(e) {
+        initAudio();
+        this.classList.add('hidden');
+        gameState = 'PLAYING';
+        resize();
+        initBoard();
+    });
 
+    document.getElementById('gameOverScreen').addEventListener('click', function() {
+        this.classList.add('hidden');
+        gameState = 'PLAYING';
+        initBoard();
+    });
+
+    document.getElementById('victoryScreen').addEventListener('click', function() {
+        cancelAnimationFrame(animationId);
+        particles = [];
+        this.classList.add('hidden');
+        currentRound = 1;
+        gameState = 'PLAYING';
+        initBoard();
+    });
+
+    // 초기 실행
+    resize();
 </script>
+
 </body>
 </html>
